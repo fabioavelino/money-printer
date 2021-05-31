@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Minimal D3 Example</title>
+<script src="https://d3js.org/d3.v4.min.js"></script>
+<script src="http://techanjs.org/techan.min.js"></script>
+    <script src="./dataWithIndicators.js" charset="utf-8"></script>
+    <style> /* set the CSS */
+
+        .line {
+          fill: none;
+          stroke: steelblue;
+          stroke-width: 2px;
+        }
+        .line2 {
+          fill: none;
+          stroke: red;
+          stroke-width: 2px;
+        }
+        .line3 {
+          fill: none;
+          stroke: green;
+          stroke-width: 2px;
+        }
+        
+        </style>
+<body>
+<script>
+
+    var parseTime = d3.timeParse("%Y-%m-%dT%H:%M:%SZ");
+
+    // set the dimensions and margins of the graph
+var margin = {top: 20, right: 20, bottom: 30, left: 50},
+    width = 960 - margin.left - margin.right,
+    height = 500 - margin.top - margin.bottom;
+
+// set the ranges
+var x = d3.scaleTime().range([0, width]);
+var y = d3.scaleLinear().range([height, 0]);
+
+// define the line
+var valueline = d3.line()
+    .x(function(d) { return x(d.date); })
+    .y(function(d) { return y(d.close); });
+
+    var valueline2 = d3.line()
+    .x(function(d) { return x(d.date); })
+    .y(function(d) { return y(d.close2); });
+
+    var valueline3 = d3.line()
+    .x(function(d) { return x(d.date); })
+    .y(function(d) { return y(d.close3); });
+
+// append the svg obgect to the body of the page
+// appends a 'group' element to 'svg'
+// moves the 'group' element to the top left margin
+var svg = d3.select("body").append("svg")
+    .attr("width", width + margin.left + margin.right)
+    .attr("height", height + margin.top + margin.bottom)
+  .append("g")
+    .attr("transform",
+          "translate(" + margin.left + "," + margin.top + ")");
+
+// Get the data
+  const draw = () => {
+  // format the data
+  var data = json.map((d) => {
+      return {
+        date: parseTime(d.openTime),
+        close: d.currentMacdzl,
+        close2: d.currentMacd,
+        close3: d.currentMacdzltema
+      }
+  });
+
+  data = data.slice(data.length - 75, data.length);
+
+  // Scale the range of the data
+  x.domain(d3.extent(data, function(d) { return d.date; }));
+  y.domain([d3.min(data, function(d) { return d.close; }), d3.max(data, function(d) { return d.close2; })]);
+
+  // Add the valueline path.
+  svg.append("path")
+      .data([data])
+      .attr("class", "line")
+      .attr("d", valueline);
+
+// Add the valueline path.
+svg.append("path")
+      .data([data])
+      .attr("class", "line2")
+      .attr("d", valueline2);
+
+      // Add the valueline path.
+svg.append("path")
+      .data([data])
+      .attr("class", "line3")
+      .attr("d", valueline3);
+
+  // Add the X Axis
+  svg.append("g")
+      .attr("transform", "translate(0," + height + ")")
+      .call(d3.axisBottom(x));
+
+  // Add the Y Axis
+  svg.append("g")
+      .call(d3.axisLeft(y));
+
+};
+draw();
+
+</script>
+  </body>
+</html>

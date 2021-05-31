@@ -1,0 +1,314 @@
+const fs = require("fs");
+const TulindHelper = require("./tulind_helper");
+const DataHelper = require("./data_helper");
+const {
+  buy,
+  sell,
+  getPortfolio,
+  getProfits,
+  getLastXTrades,
+} = require("./fakePortfolio");
+const { get } = require("http");
+
+// Volume multiplicator needed
+const VOLUME_FLAG = false;
+const VOLUME_ALERT_LIMIT = 3;
+
+//RSI limits signal
+const RSI_FLAG = true;
+const RSI_HIGH_LIMIT = 80;
+const RSI_LOW_LIMIT = 20;
+
+//MACDZL limits signal
+const MACDZL_FLAG = false;
+const MACDZL_SELL_SIGNAL_LIMIT = 0.4;
+const MACDZL_BUY_SIGNAL_LIMIT = -1;
+
+//MACD limits signal
+const MACD_FLAG = true;
+const MACD_SELL_SIGNAL_LIMIT = 0.2;
+const MACD_BUY_SIGNAL_LIMIT = -1;
+
+//Bollinger Band signal
+const BOLLBAND_FLAG = true;
+const ACCEPTABLE_LOWER_DIFF_PERCENTAGE = 20 / 100;
+const ACCEPTABLE_UPPER_DIFF_PERCENTAGE = 20 / 100;
+
+//Drop after a high close value
+const DROP_AFTER_HIGH_CLOSE_VALUE_FLAG = true;
+const DROP_AFTER_HIGH_CLOSE_VALUE_PERIOD_MAX = 15;
+const DROP_AFTER_HIGH_CLOSE_VALUE_PERCENTAGE = 0.3 / 100;
+
+//Stop percentage allowed
+const MIN_GAIN_FLAG = true;
+const MIN_GAIN_PERCENTAGE = 0.3 / 100; //Best value: 0.05, 0.09, 0.1
+const MAX_LOSS_FLAG = true;
+const MAX_LOSS_PERCENTAGE = 0.3 / 100;
+
+const loadData = () => {
+  const FILE_PATH = "data_minutes_030620.json";
+  return JSON.parse(fs.readFileSync(FILE_PATH));
+};
+
+const WRITE_DATA_FLAG = false;
+let newData = [];
+let writeData = () => {
+  const FILE_PATH = "dataWithIndicators.json";
+  fs.writeFileSync(FILE_PATH, JSON.stringify(newData));
+};
+
+const isBuyingTime = ({
+  currentCloseValue,
+  currentVolume,
+  meanVolume,
+  currentRsi,
+  lastHighCloseValue,
+  currentMacdzl,
+  currentMacd,
+  currentBollBandUpper,
+  currentBollBandMiddle,
+  currentBollBandLower,
+}) => {
+  // Volume part
+  let isCurrentVolumePassed = true;
+  if (VOLUME_FLAG) {
+    isCurrentVolumePassed = currentVolume >= meanVolume * VOLUME_ALERT_LIMIT;
+  }
+
+  // RSI part
+  let isRSIpassed = true;
+  if (RSI_FLAG) {
+    isRSIpassed = currentRsi <= RSI_LOW_LIMIT;
+  }
+
+  //MACDZL part
+  let isMACDZLpassed = true;
+  /* if (MACDZL_FLAG) {
+    isMACDZLpassed = currentMacdzl <= MACDZL_BUY_SIGNAL_LIMIT;
+  } */
+
+  //MACD part
+  let isMACDpassed = true;
+  if (MACD_FLAG) {
+    isMACDpassed = currentMacd >= MACD_BUY_SIGNAL_LIMIT;
+  }
+
+  //BOLLBAND part
+  let isBollBandPassed = true;
+  if (BOLLBAND_FLAG) {
+    const intervalBollBand = currentBollBandUpper - currentBollBandLower;
+    const diffWithLower = currentCloseValue - currentBollBandLower;
+    const percentageDiffWithLower = diffWithLower / intervalBollBand;
+    isBollBandPassed =
+      percentageDiffWithLower <= ACCEPTABLE_LOWER_DIFF_PERCENTAGE;
+  }
+
+  let isLastHighCloseValuePassed = true;
+  if (DROP_AFTER_HIGH_CLOSE_VALUE_FLAG) {
+    const isIndexGood =
+      lastHighCloseValue.indexMax <= DROP_AFTER_HIGH_CLOSE_VALUE_PERIOD_MAX;
+    const isDiffGood =
+      currentCloseValue * (1 - DROP_AFTER_HIGH_CLOSE_VALUE_PERCENTAGE) <
+      lastHighCloseValue.maxCloseValue;
+    isLastHighCloseValuePassed = isIndexGood && isDiffGood;
+  }
+
+  return (
+    isCurrentVolumePassed &&
+    isRSIpassed &&
+    isMACDZLpassed &&
+    isMACDpassed &&
+    isBollBandPassed &&
+    isLastHighCloseValuePassed
+  );
+};
+
+const isSellingTime = ({
+  currentCloseValue,
+  currentVolume,
+  meanVolume,
+  currentMacdzl,
+  currentRsi,
+  currentBollBandUpper,
+  currentBollBandMiddle,
+  currentBollBandLower,
+}) => {
+  // Last transaction
+  const lastBuyTransaction = getPortfolio().buyTransactions[
+    getPortfolio().buyTransactions.length - 1
+  ];
+
+  //Min gain part
+  let isMinGainPassed = true;
+  if (MIN_GAIN_FLAG) {
+    const minHighPriceAccepted =
+      lastBuyTransaction.price * (1 + MIN_GAIN_PERCENTAGE);
+    isMinGainPassed = currentCloseValue >= minHighPriceAccepted;
+  }
+
+  //Max loss part
+  let isMaxLossPassed = false;
+  if (MAX_LOSS_FLAG) {
+    const maxLowPriceAccepted =
+      lastBuyTransaction.price * (1 - MAX_LOSS_PERCENTAGE);
+    isMaxLossPassed = currentCloseValue <= maxLowPriceAccepted;
+  }
+
+  // RSI part
+  let isRSIpassed = true;
+  if (RSI_FLAG) {
+    isRSIpassed = currentRsi >= RSI_HIGH_LIMIT;
+  }
+
+  //MACDZL part
+  let isMACDZLpassed = true;
+  if (MACDZL_FLAG) {
+    isMACDZLpassed = currentMacdzl <= MACDZL_SELL_SIGNAL_LIMIT;
+  }
+
+  //MACD part
+  let isMACDpassed = true;
+  /* if (MACD_FLAG) {
+    isMACDpassed = currentMacd <= MACD_SELL_SIGNAL_LIMIT;
+  } */
+
+  //BOLLBAND part
+  let isBollBandPassed = true;
+  if (BOLLBAND_FLAG) {
+    const intervalBollBand = currentBollBandUpper - currentBollBandLower;
+    const diffWithUpper = currentBollBandUpper - currentCloseValue;
+    const percentageDiffWithUpper = diffWithUpper / intervalBollBand;
+    isBollBandPassed =
+      percentageDiffWithUpper <= ACCEPTABLE_UPPER_DIFF_PERCENTAGE;
+  }
+
+  return (
+    isMaxLossPassed ||
+    (isMinGainPassed &&
+      isMACDZLpassed &&
+      isMACDpassed &&
+      isRSIpassed &&
+      isBollBandPassed)
+  );
+};
+
+const simulateMarket = async () => {
+  console.log("Before trading:", getPortfolio().usdt_portfolio);
+  const data = loadData();
+  const START = 200;
+  let index = START;
+  for (index; index < data.length; index++) {
+    // Current data[index] values
+    const current = data[index];
+    const currentVolume = Number.parseFloat(current.volume);
+    const currentCloseValue = Number.parseFloat(current.closeValue);
+    const currentCloseTime = current.closeTime;
+    const closeValues = DataHelper.getCloseValues(data, index - START, index);
+
+    // empty values for flags
+    let currentRsi;
+    let currentMacdzltema;
+    let currentMacdzl;
+    let currentMacd;
+    let meanVolume;
+    let lastHighCloseValue;
+    let currentBollBandUpper;
+    let currentBollBandMiddle;
+    let currentBollBandLower;
+
+    //RSI calculation
+    if (RSI_FLAG) {
+      const rsis = await TulindHelper.getRSIs(closeValues, 6);
+      currentRsi = rsis[rsis.length - 1];
+    }
+
+    //MACDZL calculation
+    if (MACDZL_FLAG) {
+      const macdzls = await TulindHelper.getMACDZLs(closeValues, [12, 26, 9]);
+      currentMacdzl = macdzls[macdzls.length - 1];
+
+      const macdzltemas = await TulindHelper.getMACDZLTEMAs(closeValues, [
+        12,
+        26,
+        9,
+      ]);
+      currentMacdzltema = macdzltemas[macdzltemas.length - 1];
+    }
+
+    //MACD calculation
+    if (MACD_FLAG) {
+      const macds = await TulindHelper.getMACDs(closeValues, [12, 26, 9]);
+      currentMacd = macds[macds.length - 1];
+    }
+
+    // Mean Volume
+    if (VOLUME_FLAG) {
+      meanVolume = DataHelper.getMeanVolume(data, index - 10, index);
+    }
+
+    // Drop after high close value
+    if (DROP_AFTER_HIGH_CLOSE_VALUE_FLAG) {
+      lastHighCloseValue = TulindHelper.getMaxCloseValue(closeValues);
+    }
+
+    // Boll Band
+    if (BOLLBAND_FLAG) {
+      const bollBands = await TulindHelper.getBollBands(closeValues, [21, 2]);
+      const currentIndex = bollBands[0].length - 1;
+      currentBollBandLower = bollBands[0][currentIndex];
+      currentBollBandMiddle = bollBands[1][currentIndex];
+      currentBollBandUpper = bollBands[2][currentIndex];
+    }
+
+    // Relevant analytical data
+    const relevantAnalyticalData = {
+      currentCloseValue,
+      currentCloseTime,
+      currentVolume,
+      meanVolume,
+      lastHighCloseValue,
+      currentRsi,
+      currentMacdzl,
+      currentMacd,
+      currentBollBandUpper,
+      currentBollBandMiddle,
+      currentBollBandLower,
+    };
+
+    if (WRITE_DATA_FLAG) {
+      const newDataToWrite = {
+        ...current,
+        currentRsi,
+        currentMacdzltema,
+        currentMacdzl,
+        currentMacd,
+        currentBollBandUpper,
+        currentBollBandMiddle,
+        currentBollBandLower,
+      };
+      newData.push(newDataToWrite);
+    }
+
+    if (getPortfolio().btc_portfolio === 0) {
+      if (isBuyingTime(relevantAnalyticalData)) {
+        buy(currentCloseValue, currentCloseTime, relevantAnalyticalData);
+      }
+    } else if (getPortfolio().usdt_portfolio === 0) {
+      if (isSellingTime(relevantAnalyticalData)) {
+        sell(currentCloseValue, currentCloseTime, relevantAnalyticalData);
+      }
+    }
+  }
+  if (getPortfolio().usdt_portfolio === 0) {
+    const current = data[data.length - 1];
+    const currentCloseValue = Number.parseFloat(current.closeValue);
+    const currentCloseTime = current.closeTime;
+    sell(currentCloseValue, currentCloseTime);
+  }
+  console.log("Last 50 trades: ", getLastXTrades(10));
+  console.log("After trading:", getPortfolio().usdt_portfolio);
+  console.log("Profits:", getProfits() + "%");
+  WRITE_DATA_FLAG && writeData();
+};
+
+simulateMarket();

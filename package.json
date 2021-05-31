@@ -1,0 +1,33 @@
+{
+  "name": "money-printer",
+  "version": "1.0.0",
+  "description": "Make money easy",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/fabioavelino/money-printer.git"
+  },
+  "author": "Fabio",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/fabioavelino/money-printer/issues"
+  },
+  "homepage": "https://github.com/fabioavelino/money-printer#readme",
+  "dependencies": {
+    "@tensorflow/tfjs": "^3.0.0",
+    "@tensorflow/tfjs-node": "^3.0.0",
+    "@tensorflow/tfjs-node-gpu": "^3.0.0",
+    "arima": "^0.2.1",
+    "axios": "^0.21.1",
+    "csvtojson": "^2.0.10",
+    "dayjs": "^1.9.1",
+    "firebase-admin": "^9.2.0",
+    "mathjs": "^7.3.0",
+    "moment": "^2.26.0",
+    "node-fetch": "^2.6.1",
+    "tulind": "^0.8.18"
+  }
+}
